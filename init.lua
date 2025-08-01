@@ -5,8 +5,8 @@
 
 local command = require "core.command"
 local view = require "plugins.treeview"
-local fsutils = require "plugins.treeview-extender.fsutils"
-local actions = require "plugins.treeview-extender.actions"
+local fsutils = require "plugins.treeview-plus.fsutils"
+local actions = require "plugins.treeview-plus.actions"
 
 local menu = view.contextmenu
 
@@ -17,6 +17,19 @@ command.add(
   end, {
     ["treeview:duplicate-file"] = actions.duplicate_file,
     ["treeview:copy-to"] = actions.copy_to
+  })
+
+command.add(
+  function()
+    return view.hovered_item ~= nil
+      and fsutils.is_dir(view.hovered_item.abs_filename) ~= true
+  end, {
+    ["treeview:copy"] = actions.copy,
+    ["treeview:paste"] = actions.paste
+  })
+
+  command.add(nil, {
+    ["treeview:test"] = actions.test
   })
 
 command.add(
@@ -60,6 +73,48 @@ menu:register(
   end,
   {
     { text = "Move To..", command = "treeview:move-to" },
+  }
+)
+
+menu:register(
+  function()
+    return view.hovered_item
+      and (fsutils.is_dir(view.hovered_item.abs_filename) ~= true
+      or view.hovered_item.abs_filename ~= fsutils.project_dir())
+  end,
+  {
+    menu.DIVIDER,
+  }
+)
+
+menu:register(
+  function()
+    return view.hovered_item
+      and view.hovered_item.abs_filename ~= fsutils.project_dir()
+  end,
+  {
+    { text = "Copy..", command = "treeview:copy" },
+    -- { text = "Paste..", command = "treeview:paste" },
+  }
+)
+
+menu:register(
+  function()
+    print("[MENU DEBUG] something in source_path : ",actions.treeview_clipboard.source_path)
+    return actions.treeview_clipboard.source_path ~= nil
+  end,
+  {
+    -- { text = "Copy..", command = "treeview:copy" },
+    { text = "Paste..", command = "treeview:paste" },
+  }
+)
+
+menu:register(
+  function()
+    return true
+  end,
+  {
+    { text = "Test..", command = "treeview:test" },
   }
 )
 

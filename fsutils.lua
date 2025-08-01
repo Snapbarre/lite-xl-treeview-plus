@@ -1,6 +1,8 @@
 
 local core = require "core"
 
+local lfs = require("lfs")
+
 local fsutils = {}
 
 --- Checks whether a file or directory exists
@@ -30,9 +32,9 @@ end
 function fsutils.move_object(old_abs_filename, new_abs_filename)
   local res, err = os.rename(old_abs_filename, new_abs_filename)
   if res then -- successfully renamed
-    core.log("[treeview-extender] Moved \"%s\" to \"%s\"", old_abs_filename, new_abs_filename)
+    core.log("[treeview-plus] Moved \"%s\" to \"%s\"", old_abs_filename, new_abs_filename)
   else
-    core.error("[treeview-extender] Error while moving \"%s\" to \"%s\": %s", old_abs_filename, new_abs_filename, err)
+    core.error("[treeview-plus] Error while moving \"%s\" to \"%s\": %s", old_abs_filename, new_abs_filename, err)
   end
 end
 
@@ -60,6 +62,18 @@ end
 
 function fsutils.project_dir()
   return core.project_dir or core.root_project().path
+end
+
+function fsutils.dirname(path)
+  return path:match("^(.*)[/\\]")
+end
+
+function fsutils.basename(path)
+  return path:match("^.+/(.+)$") or path
+end
+
+function fsutils.isdir(path)
+  return lfs.attributes(path, "mode") == "directory"
 end
 
 return fsutils
