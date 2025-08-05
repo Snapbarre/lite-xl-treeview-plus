@@ -22,7 +22,7 @@ command.add(
 command.add(
   function()
     return view.hovered_item ~= nil
-      and fsutils.is_dir(view.hovered_item.abs_filename) ~= true
+      --and fsutils.is_dir(view.hovered_item.abs_filename) ~= true
   end, {
     ["treeview:copy"] = actions.copy,
     ["treeview:paste"] = actions.paste
@@ -100,7 +100,7 @@ menu:register(
 
 menu:register(
   function()
-    print("[MENU DEBUG] something in source_path : ",actions.treeview_clipboard.source_path)
+    -- print("[MENU DEBUG] source_path : ",actions.treeview_clipboard.source_path)
     return actions.treeview_clipboard.source_path ~= nil
   end,
   {
@@ -108,6 +108,16 @@ menu:register(
     { text = "Paste..", command = "treeview:paste" },
   }
 )
+
+-- menu:register(
+--   function()
+--     return view.hovered_item
+--       and view.hovered_item.abs_filename ~= fsutils.project_dir()
+--   end,
+--   {
+--     { text = "Test 2", command = "treeview:paste" },
+--   }
+-- )
 
 menu:register(
   function()
