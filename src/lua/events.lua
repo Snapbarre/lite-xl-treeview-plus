@@ -3,7 +3,7 @@ local common = require "core.common"
 local style = require "core.style"
 
 local treeview = require "plugins.treeview"
-local fsutils = require "plugins.treeview-plus.fsutils" -- if you use helpers
+local fsutils = require "plugins.treeview-plus.src.lua.fsutils" -- if you use helpers
 local command = require "core.command"
 
 
@@ -41,7 +41,7 @@ end
 local old_root_press = core.root_view.on_mouse_pressed
 function core.root_view:on_mouse_pressed(button, x, y, clicks)
   -- command.perform "debugger:break"
-  print("[DEBUG] Global mouse press: button %d", button)
+  -- print("[DEBUG] Global mouse press: button %d", button)
   -- Check what item is currently hovered
   local item = treeview.hovered_item
   -- core.log("[PRESS EVENT] ", item)
@@ -52,10 +52,11 @@ function core.root_view:on_mouse_pressed(button, x, y, clicks)
       events.context_path = fsutils.dirname(item.abs_filename)
     end
   end
-    print("[DEBUG] context_path set to :",events.context_path)
+    -- print("[DEBUG] context_path set to :",events.context_path)
   -- core.log("Global mouse press: button %d", button)
   return old_root_press(self, button, x, y, clicks)
 end
+
 
 
 return events

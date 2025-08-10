@@ -5,8 +5,14 @@
 
 local command = require "core.command"
 local view = require "plugins.treeview"
-local fsutils = require "plugins.treeview-plus.fsutils"
-local actions = require "plugins.treeview-plus.actions"
+local fsutils = require "plugins.treeview-plus.src.lua.fsutils"
+local actions = require "plugins.treeview-plus.src.lua.actions"
+
+
+print("[DEBUG] cplua init ")
+local cplua = require "plugins.treeview-plus.cplua"
+print("[DEBUG] cplua test: ", cplua~=nil)
+
 
 local menu = view.contextmenu
 
@@ -38,6 +44,21 @@ command.add(
       and view.hovered_item.abs_filename ~= fsutils.project_dir()
   end, {
     ["treeview:move-to"] = actions.move_to
+  })
+
+command.add(
+  function()
+    return view.hovered_item ~= nil
+      and fsutils.is_dir(view.hovered_item.abs_filename) ~= true
+  end, {
+    ["treeview:clip_copy"] = function()
+      local path = view.hovered_item and view.hovered_item.abs_filename
+      if path then
+        cplua.copy(path)
+      else
+        core.error("No hovered file to copy")
+      end
+    end
   })
 
 menu:register(
@@ -109,6 +130,27 @@ menu:register(
   }
 )
 
+menu:register(
+  function()
+    return view.hovered_item
+      and (fsutils.is_dir(view.hovered_item.abs_filename) ~= true
+      or view.hovered_item.abs_filename ~= fsutils.project_dir())
+  end,
+  {
+    menu.DIVIDER,
+  }
+)
+
+menu:register(
+  function()
+    return view.hovered_item
+      and view.hovered_item.abs_filename ~= fsutils.project_dir()
+  end,
+  {
+    { text = "Copy to clip..", command = "treeview:clip_copy" },
+  }
+)
+
 -- menu:register(
 --   function()
 --     return view.hovered_item
@@ -127,5 +169,25 @@ menu:register(
     { text = "Test..", command = "treeview:test" },
   }
 )
+
+local core = require "core"
+print("[DEBUG] core test: ", core~=nil)
+print("[DEBUG] core onquit exists: ", core.on_quit_project~=nil)
+
+-- core.events:on("core.quit", function()
+--   -- clean-up code here, e.g. stop your clipboard thread
+--   print("Lite XL is quitting!")
+--   -- call your stop_thread() or other cleanup here
+-- end)
+
+local on_quit_project = core.on_quit_project
+function core.on_quit_project()
+  print("[DEBUG] exiting")
+  cplua.on_quit()
+  on_quit_project()
+end
+
+
+
 
 return view

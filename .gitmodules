@@ -1,0 +1,6 @@
+[submodule "src/submod/libclipboard"]
+	path = src/submod/libclipboard
+	url = https://github.com/jtanx/libclipboard.git
+[submodule "src/submod/lite-xl"]
+	path = src/submod/lite-xl
+	url = https://github.com/lite-xl/lite-xl.git
