@@ -7,6 +7,8 @@ local command = require "core.command"
 local view = require "plugins.treeview"
 local fsutils = require "plugins.treeview-plus.src.lua.fsutils"
 local actions = require "plugins.treeview-plus.src.lua.actions"
+local core = require "core"
+local events = require "plugins.treeview-plus.src.lua.events"
 
 
 print("[DEBUG] cplua init ")
@@ -53,6 +55,7 @@ command.add(
   end, {
     ["treeview:clip_copy"] = function()
       local path = view.hovered_item and view.hovered_item.abs_filename
+      print("[DEBUG] copy to clipboard " .. path)
       if path then
         cplua.copy(path)
       else
@@ -60,6 +63,19 @@ command.add(
       end
     end
   })
+
+command.add(
+    function()
+      return events.context_path ~= nil
+    end, {
+      ["treeview:clip_paste"] = function()
+        -- local path = view.hovered_item and view.hovered_item.abs_filename
+        print("[DEBUG] request clipboard data")
+        local src_path = cplua.get_clipboard_fsdata()
+        print("[DEBUG] requested src_path = "..src_path)
+        actions._paste(src_path,events.context_path)
+      end
+    })
 
 menu:register(
   function()
@@ -157,6 +173,25 @@ menu:register(
 --       and view.hovered_item.abs_filename ~= fsutils.project_dir()
 --   end,
 --   {
+--     { text = "Copy to clip..", command = "treeview:clip_copy" },
+--   }
+-- )
+
+menu:register(
+  function()
+    return events.context_path ~= nil
+  end,
+  {
+    { text = "Paste from clip..", command = "treeview:clip_paste" },
+  }
+)
+
+-- menu:register(
+--   function()
+--     return view.hovered_item
+--       and view.hovered_item.abs_filename ~= fsutils.project_dir()
+--   end,
+--   {
 --     { text = "Test 2", command = "treeview:paste" },
 --   }
 -- )
@@ -170,9 +205,9 @@ menu:register(
   }
 )
 
-local core = require "core"
-print("[DEBUG] core test: ", core~=nil)
-print("[DEBUG] core onquit exists: ", core.on_quit_project~=nil)
+-- local core = require "core"
+-- print("[DEBUG] core test: ", core~=nil)
+-- print("[DEBUG] core onquit exists: ", core.on_quit_project~=nil)
 
 -- core.events:on("core.quit", function()
 --   -- clean-up code here, e.g. stop your clipboard thread

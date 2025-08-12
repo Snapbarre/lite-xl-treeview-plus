@@ -52,6 +52,44 @@ static int pushresult(lua_State * L, int res, const char *info)
   }
 }
 
+// Helper to decode a single hex digit character
+static int from_hex(char ch) {
+    if ('0' <= ch && ch <= '9') return ch - '0';
+    if ('a' <= ch && ch <= 'f') return ch - 'a' + 10;
+    if ('A' <= ch && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+// URL-decode function that allocates a new buffer for the decoded string
+char *url_decode_alloc(const char *src) {
+    if (!src) return NULL;
+    size_t len = strlen(src);
+    // Allocate maximum possible size (decoded <= encoded)
+    char *dest = malloc(len + 1);
+    if (!dest) return NULL;
+
+    char *dst = dest;
+    while (*src) {
+        if (*src == '%' && isxdigit((unsigned char)src[1]) && isxdigit((unsigned char)src[2])) {
+            int hi = from_hex(src[1]);
+            int lo = from_hex(src[2]);
+            if (hi >= 0 && lo >= 0) {
+                *dst++ = (char)((hi << 4) | lo);
+                src += 3;
+                continue;
+            }
+        }
+        else if (*src == '+') {
+            *dst++ = ' ';  // decode + to space if needed
+            src++;
+            continue;
+        }
+        *dst++ = *src++;
+    }
+    *dst = '\0';
+    return dest;
+}
+
 #ifdef _WIN32
 
   void copy_files_to_clipboard(const char **filepaths, int file_count) {
@@ -147,6 +185,12 @@ static int pushresult(lua_State * L, int res, const char *info)
 #else
 
 typedef struct {
+    bool clipboard_data_ready;
+    bool request_clipboard_data;
+    char* data;
+}ClipboardData;
+
+typedef struct {
     Display *dpy;
     Window win;
     Atom clipboard;
@@ -161,7 +205,19 @@ typedef struct {
 
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+
+    ClipboardData *internal_data; 
+
 } ClipboardState;
+
+static ClipboardState clipboard_state = {
+    .current_uri = NULL,
+    .running = False,
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
+    .cond = PTHREAD_COND_INITIALIZER,
+};
+
+static pthread_t clipboard_thread;
 
 static void free_uri(char **uri_ptr) {
     if (*uri_ptr) {
@@ -199,6 +255,86 @@ void print_uri_content(const char *uri, size_t max_len) {
     printf("\n");
 }
 
+char* get_clipboard_data(ClipboardState *state) {
+    printf("[DEBUG CPLUA] start get clipboard data\n");
+    pthread_mutex_lock(&state->mutex);
+    free(state->internal_data->data);
+    state->internal_data->data = NULL;
+    state->internal_data->clipboard_data_ready = false;
+
+    state->internal_data->request_clipboard_data = true;
+    pthread_cond_signal(&state->cond);
+
+    // wait up to 1 second for clipboard data
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += 5;
+
+    while (!state->internal_data->clipboard_data_ready) {
+        int err = pthread_cond_timedwait(&state->cond, &state->mutex, &ts);
+        if (err == ETIMEDOUT) {
+            fprintf(stderr, "Clipboard: timeout waiting for data\n");
+            break;
+        }
+    }
+    printf("[DEBUG CPLUA] clipboard_ready\n");
+    char *result = NULL;
+    if (state->internal_data->data) {
+        printf("[DEBUG CPLUA] internal data not null\n");
+        result = strdup(state->internal_data->data);
+    }
+    pthread_mutex_unlock(&state->mutex);
+    result = url_decode_alloc(result);
+    printf("[DEBUG CPLUA] final extracted request result:\n%s\n",result);
+    return result;
+}
+
+void handle_get_clipboard_data(ClipboardState *state, XEvent *event){
+    printf("[DEBUG CPLUA] start get clipboard data handle\n");
+    char* result = NULL;
+
+    char *prop_name = XGetAtomName(state->dpy, event->xselection.property);
+    char *sel_name = XGetAtomName(state->dpy, event->xselection.selection);
+    printf("[DEBUG CPLUA] Clipboard: request loop\n property type : %s\n selection : %s\n",prop_name,sel_name);
+    if (prop_name) XFree(prop_name);
+    if (sel_name) XFree(sel_name);
+
+
+    if (event->xselection.selection != state->clipboard ||
+        event->xselection.property == None ||
+        event->xselection.property != state->gnome_atom) {
+        fprintf(stderr, "Clipboard: No gnome data\n");
+    }
+    Atom type;
+    int format;
+    unsigned long len, bytes_after;
+    unsigned char *data = NULL;
+
+    XGetWindowProperty(state->dpy, state->win,
+                    state->gnome_atom, 0, (~0L), False,
+                    AnyPropertyType, &type, &format,
+                    &len, &bytes_after, &data);
+
+    if (data) {
+        result = strndup((char*)data, len);
+        XFree(data);
+    }
+
+    
+
+    pthread_mutex_lock(&state->mutex);
+    free(state->internal_data->data);
+    state->internal_data->data = result; // take ownership from handle_get_clipboard_data
+    state->internal_data->clipboard_data_ready = (result != NULL);
+    pthread_cond_signal(&state->cond);
+    pthread_mutex_unlock(&state->mutex);
+
+    printf("[DEBUG CPLUA] extracted request result:\n%s\n",state->internal_data->data);
+
+    
+    return;
+}
+
 static void handle_selection_request(ClipboardState *state, XSelectionRequestEvent *req) {
     XSelectionEvent sev = {0};
     sev.type = SelectionNotify;
@@ -210,12 +346,11 @@ static void handle_selection_request(ClipboardState *state, XSelectionRequestEve
     sev.property = req->property;
 
     char *tname  = XGetAtomName(state->dpy, req->target);
-    printf("[DEBUG CPLUA] SelectionRequest for target: %s, send_event %s\n",
-       tname, req->send_event ? "true" : "false");
+    // printf("[DEBUG CPLUA] SelectionRequest for target: %s, send_event %s\n",tname, req->send_event ? "true" : "false");
 
     
     if (req->target == state->targets_atom) {
-        printf("[DEBUG CPLUA] target atom requested\n");
+        // printf("[DEBUG CPLUA] target atom requested\n");
         Atom available_targets[] = { state->gnome_atom, state->uri_list_atom, state->utf8_atom, state->text_atom };
         XChangeProperty(state->dpy, req->requestor, req->property, XA_ATOM, 32,
                         PropModeReplace, (unsigned char *)available_targets, 4);
@@ -233,22 +368,22 @@ static void handle_selection_request(ClipboardState *state, XSelectionRequestEve
         pthread_mutex_unlock(&state->mutex);
     }
      else if (req->target == state->gnome_atom) {
-        printf("[DEBUG CPLUA] gnome atom requested\n");
+        // printf("[DEBUG CPLUA] gnome atom requested\n");
         pthread_mutex_lock(&state->mutex);
         if (state->current_uri) {
             char buf[4096];
             snprintf(buf, sizeof(buf), "copy\n%s", state->current_uri);
-            printf("[DEBUG CPLUA] sending buffer:%s",buf);
+            // printf("[DEBUG CPLUA] sending buffer:%s",buf);
             print_uri_content(buf,200);
             XChangeProperty(state->dpy, req->requestor, req->property, state->gnome_atom, 8,
                             PropModeReplace, (unsigned char *)buf, strlen(buf));
         } else {
-            printf("[DEBUG CPLUA] no current uri found");
+            // printf("[DEBUG CPLUA] no current uri found");
             sev.property = None;
         }
         pthread_mutex_unlock(&state->mutex);
     } else if (req->target == state->utf8_atom || req->target == state->text_atom) {
-        printf("[DEBUG CPLUA] text atom requested\n");
+        // printf("[DEBUG CPLUA] text atom requested\n");
         pthread_mutex_lock(&state->mutex);
         if (state->current_uri) {
             XChangeProperty(state->dpy, req->requestor, req->property, state->utf8_atom, 8,
@@ -258,7 +393,7 @@ static void handle_selection_request(ClipboardState *state, XSelectionRequestEve
         }
         pthread_mutex_unlock(&state->mutex);
     } else {
-        printf("[DEBUG CPLUA] no matching target found in request\n");
+        // printf("[DEBUG CPLUA] no matching target found in request\n");
         sev.property = None; // unsupported target
     }
 
@@ -286,6 +421,23 @@ static void *clipboard_thread_func(void *arg) {
     state->text_atom = XInternAtom(state->dpy, "TEXT", False);
     state->uri_list_atom = XInternAtom(state->dpy, "text/uri-list", False);
 
+    state->internal_data = calloc(1, sizeof(ClipboardData));
+    if (!state->internal_data) {
+
+        // handle error and cleanup
+        fprintf(stderr, "Failed to allocate internal_data\n");
+        free_uri(&state->current_uri);
+        XDestroyWindow(state->dpy, state->win);
+        XCloseDisplay(state->dpy);
+
+        printf("[clipboard] Clipboard thread exiting.\n");
+
+        return NULL;
+    }
+    state->internal_data->clipboard_data_ready = false;
+    state->internal_data->request_clipboard_data = false;
+    state->internal_data->data = NULL;
+
     XSetSelectionOwner(state->dpy, state->clipboard, state->win, CurrentTime);
 
     if (XGetSelectionOwner(state->dpy, state->clipboard) != state->win) {
@@ -300,13 +452,27 @@ static void *clipboard_thread_func(void *arg) {
     XEvent event;
 
     while (1) {
-        printf("[DEBUG CPLUA] running thread loop\n");
+        // printf("[DEBUG CPLUA] running thread loop\n");
         while (XPending(state->dpy)) {
             XNextEvent(state->dpy, &event);
-
+            printf("[DEBUG CPLUA]  thread loop event type: %d\n", event.type);
             if (event.type == SelectionRequest) {
                 handle_selection_request(state, &event.xselectionrequest);
             }
+            else if (event.type == SelectionNotify) {
+                handle_get_clipboard_data(state, &event);
+            }
+        }
+
+        if (state->internal_data->request_clipboard_data) {
+            XConvertSelection(state->dpy,
+                            state->clipboard,
+                            state->gnome_atom,  // or other target
+                            state->gnome_atom,  // property to store
+                            state->win,
+                            CurrentTime);
+            state->internal_data->request_clipboard_data = false;
+            // wait for SelectionNotify event to come and handle it
         }
 
         // Wait for new data or exit signal
@@ -315,6 +481,7 @@ static void *clipboard_thread_func(void *arg) {
             pthread_mutex_unlock(&state->mutex);
             break;
         }
+        
         // Wait with timeout to re-check XPending in case of new events
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
@@ -323,6 +490,8 @@ static void *clipboard_thread_func(void *arg) {
         pthread_mutex_unlock(&state->mutex);
     }
 
+    free(state->internal_data->data);
+    free(state->internal_data);
     // Clean up
     free_uri(&state->current_uri);
     XDestroyWindow(state->dpy, state->win);
@@ -335,14 +504,7 @@ static void *clipboard_thread_func(void *arg) {
 
 // --- Public API ---
 
-static ClipboardState clipboard_state = {
-    .current_uri = NULL,
-    .running = False,
-    .mutex = PTHREAD_MUTEX_INITIALIZER,
-    .cond = PTHREAD_COND_INITIALIZER,
-};
 
-static pthread_t clipboard_thread;
 
 void clipboard_start_thread() {
     printf("[DEBUG CPLUA] start thread\n");
@@ -369,7 +531,7 @@ void clipboard_stop_thread() {
     }
 }
 
-void copy_file_to_clipboard(const char *filepath) {
+void copy_file_to_clipboard(ClipboardState *state, const char *filepath) {
     // Compose URI string with newline
     char uri[4096];
     // snprintf(uri, sizeof(uri), "copy\nfile://%s\n", filepath);
@@ -382,6 +544,10 @@ void copy_file_to_clipboard(const char *filepath) {
     printf("[DEBUG CPLUA] uri : %s\n", uri);
     
     update_clipboard_data(&clipboard_state, uri);
+
+    XSetSelectionOwner(state->dpy, state->clipboard, state->win, CurrentTime);
+    printf("[DEBUG CPLUA] clipboard ownership taken\n");
+    XFlush(state->dpy);
 }
 
 #endif
@@ -390,15 +556,37 @@ static int clipboard_fs_copy(lua_State * L)
 {
     
     const char *path = luaL_checkstring(L, 1); 
-    printf("[DEBUG CPLUA] path: %s\n", path);
+    printf("[DEBUG CPLUA] copy to clip path: %s\n", path);
 
     //   copy_files_to_clipboard(path);
-    copy_file_to_clipboard(path);
-    return ;
+    copy_file_to_clipboard(&clipboard_state,path);
+    return 0;
+}
+
+static int clipboard_get_fsdata(lua_State * L)
+{
+    printf("[DEBUG CPLUA] request clipboard fs data\n");
+    // const char *path = luaL_checkstring(L, 1); 
+    // printf("[DEBUG CPLUA] path: %s\n", path);
+
+    //   copy_files_to_clipboard(path);
+
+
+    char *path = get_clipboard_data(&clipboard_state);
+    if (path) {
+        lua_pushstring(L, path);  // Push string result onto Lua stack
+        return 1;                 // Return 1 value
+    } else {
+        lua_pushnil(L);           // If no data, return nil
+        return 1;
+    }
+
+    return 0;
 }
 
 static const struct luaL_Reg cplua_api[] = {
   { "copy", clipboard_fs_copy },
+  { "get_clipboard_fsdata", clipboard_get_fsdata },
   // { "paste", clipboard_fs_paste },
   { "on_quit", clipboard_stop_thread },
   { NULL, NULL },

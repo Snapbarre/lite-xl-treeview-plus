@@ -115,6 +115,58 @@ function actions.copy()
 end
 
 
+function actions._paste_file(src,dest_dir)
+  local base = fsutils.basename(src)
+  local dest = dest_dir .. PATHSEP .. base
+
+  -- If duplicate name, auto-rename
+  local counter = 1
+  while fsutils.is_object_exist(dest) do
+    local name, ext = base:match("(.+)(%..+)$")
+    name = name or base
+    ext = ext or ""
+    dest = dest_dir .. PATHSEP .. string.format("%s (%d)%s", name, counter, ext)
+    counter = counter + 1
+  end
+
+  fsutils.copy_file(src, dest)
+  core.log("[treeview-plus] Pasted file: %s → %s", src, dest)
+  
+end
+
+function actions._paste_dir(src,dest_dir)
+
+  local base = fsutils.basename(src)
+  local dest = dest_dir .. PATHSEP .. base
+
+  local counter = 1
+  while fsutils.is_object_exist(dest) do
+    local name, ext = base:match("(.+)(%..+)$")
+    name = name or base
+    ext = ext or ""
+    dest = dest_dir .. PATHSEP .. string.format("%s (%d)%s", name, counter, ext)
+    counter = counter + 1
+  end
+  
+  
+  fsutils.copy_dir(src, dest)
+  core.log("[treeview-plus] Pasted dir: %s → %s", src, dest)
+  
+end
+
+function actions._paste(src,dest_dir)
+  --check if destination directory exists
+  if not dest_dir or not fsutils.is_dir(dest_dir) then
+      core.error("[treeview-plus] paste action exception: destination directory does not exists :",dest_dir)
+    return
+  end
+
+  if not fsutils.is_dir(src) then
+    actions._paste_file(src,dest_dir)
+  else
+    actions._paste_dir(src,dest_dir)
+  end
+end
 
 function actions.paste()
   if not treeview_clipboard.source_path then
@@ -123,56 +175,13 @@ function actions.paste()
   
   --  local dest_dir = view.hovered_item and view.hovered_item.abs_filename
   local dest_dir = events.context_path
-  if not dest_dir or not fsutils.is_dir(dest_dir) then
-    core.error("[treeview-plus] Please hover a directory or file to paste into.")
+    if not dest_dir or not fsutils.is_dir(dest_dir) then
+      core.error("[treeview-plus] Please hover a directory or file to paste into.")
     return
   end
 
   local src = treeview_clipboard.source_path
-
-  if not fsutils.is_dir(src) then
-
-    local base = fsutils.basename(src)
-    local dest = dest_dir .. PATHSEP .. base
-
-    -- If duplicate name, auto-rename
-    local counter = 1
-    while fsutils.is_object_exist(dest) do
-      local name, ext = base:match("(.+)(%..+)$")
-      name = name or base
-      ext = ext or ""
-      dest = dest_dir .. PATHSEP .. string.format("%s (%d)%s", name, counter, ext)
-      counter = counter + 1
-    end
-
-    fsutils.copy_file(src, dest)
-    -- local pasted_Doc = core.open_doc(dest)
-    -- local pasted_View = = DocView(pasted_Doc)
-    -- core.root_view:get_active_node():add_view(pasted_View)
-
-    core.log("[treeview-plus] Pasted file: %s → %s", src, dest)
-
-    core.root_view:open_doc(core.open_doc(dest))
-
-  else
-
-    local base = fsutils.basename(src)
-    local dest = dest_dir .. PATHSEP .. base
-
-    local counter = 1
-    while fsutils.is_object_exist(dest) do
-      local name, ext = base:match("(.+)(%..+)$")
-      name = name or base
-      ext = ext or ""
-      dest = dest_dir .. PATHSEP .. string.format("%s (%d)%s", name, counter, ext)
-      counter = counter + 1
-    end
-    
-    
-    fsutils.copy_dir(src, dest)
-    core.log("[treeview-plus] Pasted dir: %s → %s", src, dest)
-
-  end
+  actions._paste(src,dest_dir)
 
   -- Optionally clear clipboard if it's a "cut"
   --[[if file_clipboard.mode == "cut" then
@@ -181,6 +190,72 @@ function actions.paste()
     file_clipboard.mode = nil
   end]]--
 end
+
+-- function actions.paste()
+--   if not treeview_clipboard.source_path then
+--     core.error("[treeview-plus] Clipboard is empty.")
+--   end
+  
+--   --  local dest_dir = view.hovered_item and view.hovered_item.abs_filename
+--   local dest_dir = events.context_path
+--   if not dest_dir or not fsutils.is_dir(dest_dir) then
+--     core.error("[treeview-plus] Please hover a directory or file to paste into.")
+--     return
+--   end
+
+--   local src = treeview_clipboard.source_path
+
+--   if not fsutils.is_dir(src) then
+
+--     local base = fsutils.basename(src)
+--     local dest = dest_dir .. PATHSEP .. base
+
+--     -- If duplicate name, auto-rename
+--     local counter = 1
+--     while fsutils.is_object_exist(dest) do
+--       local name, ext = base:match("(.+)(%..+)$")
+--       name = name or base
+--       ext = ext or ""
+--       dest = dest_dir .. PATHSEP .. string.format("%s (%d)%s", name, counter, ext)
+--       counter = counter + 1
+--     end
+
+--     fsutils.copy_file(src, dest)
+--     -- local pasted_Doc = core.open_doc(dest)
+--     -- local pasted_View = = DocView(pasted_Doc)
+--     -- core.root_view:get_active_node():add_view(pasted_View)
+
+--     core.log("[treeview-plus] Pasted file: %s → %s", src, dest)
+
+--     core.root_view:open_doc(core.open_doc(dest))
+
+--   else
+
+--     local base = fsutils.basename(src)
+--     local dest = dest_dir .. PATHSEP .. base
+
+--     local counter = 1
+--     while fsutils.is_object_exist(dest) do
+--       local name, ext = base:match("(.+)(%..+)$")
+--       name = name or base
+--       ext = ext or ""
+--       dest = dest_dir .. PATHSEP .. string.format("%s (%d)%s", name, counter, ext)
+--       counter = counter + 1
+--     end
+    
+    
+--     fsutils.copy_dir(src, dest)
+--     core.log("[treeview-plus] Pasted dir: %s → %s", src, dest)
+
+--   end
+
+  -- Optionally clear clipboard if it's a "cut"
+  --[[if file_clipboard.mode == "cut" then
+    os.remove(src)
+    file_clipboard.path = nil
+    file_clipboard.mode = nil
+  end]]--
+-- end
 
 
 function actions.move_to()
