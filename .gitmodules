@@ -4,3 +4,6 @@
 [submodule "src/submod/lite-xl"]
 	path = src/submod/lite-xl
 	url = https://github.com/lite-xl/lite-xl.git
+[submodule "src/submod/deps/libuv"]
+	path = src/submod/libuv
+	url = https://github.com/libuv/libuv.git
