@@ -29,6 +29,7 @@
 #endif
 
 #include "cplua.h"
+// #include "fs_helper.h"
 // #include "libclipboard.h"
 
 static int pusherror(lua_State * L, const char *info)
@@ -236,7 +237,7 @@ static void update_clipboard_data(ClipboardState *state, const char *new_uri) {
 
 void print_uri_content(const char *uri, size_t max_len) {
     if (!uri) {
-        printf("URI is NULL\n");
+        printf("URI is NULL blabla 2\n");
         return;
     }
 

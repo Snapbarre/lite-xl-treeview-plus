@@ -54,13 +54,18 @@ command.add(
       and fsutils.is_dir(view.hovered_item.abs_filename) ~= true
   end, {
     ["treeview:clip_copy"] = function()
-      local path = view.hovered_item and view.hovered_item.abs_filename
-      print("[DEBUG] copy to clipboard " .. path)
-      if path then
-        cplua.copy(path)
-      else
-        core.error("No hovered file to copy")
-      end
+
+      core.add_thread(function()
+
+        local path = view.hovered_item and view.hovered_item.abs_filename
+        print("[DEBUG] copy to clipboard " .. path)
+        if path then
+            cplua.copy(path)
+        else
+          core.error("No hovered file to copy")
+        end
+
+      end)
     end
   })
 
@@ -70,10 +75,11 @@ command.add(
     end, {
       ["treeview:clip_paste"] = function()
         -- local path = view.hovered_item and view.hovered_item.abs_filename
-        print("[DEBUG] request clipboard data")
-        local src_path = cplua.get_clipboard_fsdata()
-        print("[DEBUG] requested src_path = "..src_path)
-        actions._paste(src_path,events.context_path)
+        print("[DEBUG] start paste thread")
+        core.add_thread(function()
+          local src_path = cplua.get_clipboard_fsdata()
+          actions._paste(src_path,events.context_path)
+        end)
       end
     })
 
