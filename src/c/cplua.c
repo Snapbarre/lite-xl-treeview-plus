@@ -29,7 +29,7 @@
 #endif
 
 #include "cplua.h"
-// #include "fs_helper.h"
+#include "fs_helper.h"
 // #include "libclipboard.h"
 
 static int pusherror(lua_State * L, const char *info)
@@ -585,11 +585,19 @@ static int clipboard_get_fsdata(lua_State * L)
     return 0;
 }
 
+void copy(lua_State * L){
+    const char *src = luaL_checkstring(L, 1); 
+    const char *dst = luaL_checkstring(L, 2); 
+    copy_to(src,dst);
+    return;
+}
+
 static const struct luaL_Reg cplua_api[] = {
   { "copy", clipboard_fs_copy },
   { "get_clipboard_fsdata", clipboard_get_fsdata },
   // { "paste", clipboard_fs_paste },
   { "on_quit", clipboard_stop_thread },
+  { "copy_to", copy },
   { NULL, NULL },
 };
 

@@ -131,7 +131,6 @@ void copy_dir(const char* src, const char* dst){
         //     copy_file_async(src_path, dst_path);
         // }
         copy_to(src_path,dst);
-
     }
 
     uv_fs_req_cleanup(&req);
@@ -164,6 +163,28 @@ const char* get_basename(const char* path) {
     }
 }
 
+bool folder_syntax(const char* path) {
+    size_t len = strlen(path);
+    if (len == 0) return false;
+
+    // Check trailing slash
+    if (path[len - 1] == '/' || path[len - 1] == '\\') return true;
+
+    // Find last path component
+    const char *base = strrchr(path, '/');
+#ifdef _WIN32
+    const char *base_win = strrchr(path, '\\');
+    if (base_win && (!base || base_win > base)) base = base_win;
+#endif
+    base = base ? base + 1 : path;
+
+    // If last component contains a dot, assume file
+    if (strchr(base, '.') != NULL) return false;
+
+    return true; // otherwise treat as directory
+}
+
+
 
 char* check_name(char* fs_src_path, char* fs_dest_directory){
     // const char* base = strrchr(fs_src_path, '/');
@@ -173,6 +194,10 @@ char* check_name(char* fs_src_path, char* fs_dest_directory){
     // #endif
     // base = base ? base + 1 : fs_src_path;
 
+    if (!folder_syntax(fs_dest_directory)){
+        printf("[DEBUG FSHELPER] destination directory is not a folder syntax : %s\n",fs_dest_directory);
+        return NULL;
+    }
     char* base = get_basename(fs_src_path);
     
     char* dest = malloc(strlen(fs_dest_directory) + 1 + strlen(base) + 32);
@@ -206,7 +231,7 @@ char* check_name(char* fs_src_path, char* fs_dest_directory){
     return dest;
 }
 
-result_t copy_to(const char* src, const char* dest_directory) {
+void copy_to(const char* src, const char* dest_directory) {
     result_t output = {
         .code=0,
         .message=NULL, 
@@ -214,12 +239,14 @@ result_t copy_to(const char* src, const char* dest_directory) {
     };
 
     if (!path_exists(src)){
-        output.code = -1;
-        output.ownership = 1;
-        char* buf = malloc(PATH_MAX);
-        snprintf(buf, PATH_MAX, "Path does not exist: %s", src);
-        output.message = buf;
-        return output;
+        printf("[DEBUG FSHELPER] Copy error, source path does not exists %s\n",src);
+
+        // output.code = -1;
+        // output.ownership = 1;
+        // char* buf = malloc(PATH_MAX);
+        // snprintf(buf, PATH_MAX, "Path does not exist: %s", src);
+        // output.message = buf;
+        return ;
     }
 
     // if (!is_directory(dest_directory)){
@@ -244,8 +271,9 @@ result_t copy_to(const char* src, const char* dest_directory) {
         output.code = -1;
         output.ownership = 0;
         output.message = "Source path is neither file or directory, cannot handle case";
-        return output;
+        printf("[DEBUG FSHELPER] Copy error, Source path is neither file or directory, cannot handle case\n");
     }
+    return;
     
 
 }
